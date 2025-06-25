@@ -1,0 +1,241 @@
+# File: main.py
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
+from pymongo import MongoClient
+from pymongo.errors import ConnectionFailure
+from bson import ObjectId
+import httpx # For making HTTP requests to the llama.cpp server
+import os
+import datetime
+from typing import Optional, List
+
+# --- FastAPI App Initialization ---
+app = FastAPI(
+    title="Road Data Management API",
+    description="API for managing road miscellaneous data and interacting with an LLM on Jetson Orin.",
+    version="1.0.0"
+)
+
+# --- MongoDB Configuration ---
+# Use environment variables for sensitive info
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
+MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "road_data_db")
+MONGO_COLLECTION_NAME = os.getenv("MONGO_COLLECTION_NAME", "miscellaneous")
+
+client: Optional[MongoClient] = None
+db = None
+collection = None
+
+# --- LLM (llama.cpp) Configuration ---
+# Replace with the actual IP address of your Jetson Orin and the port llama.cpp server runs on
+JETSON_ORIN_IP = os.getenv("JETSON_ORIN_IP", "YOUR_JETSON_ORIN_IP") # **UPDATE THIS WITH YOUR JETSON ORIN'S IP**
+LLAMA_CPP_PORT = os.getenv("LLAMA_CPP_PORT", "8001") # Default port for llama.cpp server
+LLAMA_CPP_COMPLETIONS_URL = f"http://{JETSON_ORIN_IP}:{LLAMA_CPP_PORT}/v1/chat/completions"
+# Example model name you'll load on the Jetson. Make sure it matches what you use.
+LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "mistral-7b-instruct-v0.2.Q4_K_M.gguf")
+
+
+# --- Pydantic Models for Data Validation ---
+class RoadMisc(BaseModel):
+    # Optional ID for Pydantic (MongoDB generates its own _id)
+    id: Optional[str] = Field(alias="_id")
+    type: str = Field(..., description="Type of miscellaneous item (e.g., 'Pothole', 'Debris', 'Crack').")
+    location: str = Field(..., description="Geographic location or descriptive location.")
+    description: str = Field(..., description="Detailed description of the item.")
+    status: str = Field(default="requested", description="Status of the item ('requested', 'fixed', 'ignored').")
+    # Store timestamp of creation
+    created_at: datetime.datetime = Field(default_factory=datetime.datetime.now)
+    # Fields for AI processing
+    ai_fix_description: Optional[str] = Field(None, description="AI-generated description of the fix.")
+    ai_processed_at: Optional[datetime.datetime] = Field(None, description="Timestamp when AI processed the item.")
+
+    class Config:
+        populate_by_name = True # Allow mapping _id to id
+        json_encoders = {ObjectId: str} # Encode ObjectId to string for JSON output
+
+# --- FastAPI Lifecycle Events ---
+@app.on_event("startup")
+async def startup_db_client():
+    """Connect to MongoDB on application startup."""
+    global client, db, collection
+    try:
+        client = MongoClient(MONGO_URI)
+        client.admin.command('ping') # Test connection
+        db = client[MONGO_DB_NAME]
+        collection = db[MONGO_COLLECTION_NAME]
+        print(f"Connected to MongoDB: {MONGO_URI}, Database: {MONGO_DB_NAME}, Collection: {MONGO_COLLECTION_NAME}")
+    except ConnectionFailure as e:
+        print(f"Could not connect to MongoDB: {e}")
+        # In a real-world scenario, you might want to raise an exception or handle this gracefully.
+        # For this example, we'll let it proceed, but operations will fail.
+    except Exception as e:
+        print(f"An unexpected error occurred during MongoDB connection: {e}")
+
+@app.on_event("shutdown")
+async def shutdown_db_client():
+    """Close MongoDB connection on application shutdown."""
+    global client
+    if client:
+        client.close()
+        print("Disconnected from MongoDB.")
+
+# --- API Endpoints ---
+
+@app.post("/submit-misc/", response_model=RoadMisc, status_code=201)
+async def submit_miscellaneous_item(item: RoadMisc):
+    """
+    Receives miscellaneous road data from the C# program and adds it to MongoDB.
+    Initial status will be "requested".
+    """
+    if collection is None:
+        raise HTTPException(status_code=503, detail="Database not connected.")
+
+    # Ensure status is set to 'requested' for new submissions
+    item.status = "requested"
+    item.created_at = datetime.datetime.now() # Ensure timestamp is current
+
+    try:
+        # Convert Pydantic model to dictionary, excluding the 'id' field for MongoDB's _id
+        item_dict = item.model_dump(by_alias=True, exclude={"id"})
+        result = collection.insert_one(item_dict)
+        
+        # Update the Pydantic model with the generated _id
+        item.id = str(result.inserted_id)
+        return item
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to submit item: {str(e)}")
+
+@app.get("/get-misc-requested/", response_model=List[RoadMisc])
+async def get_requested_miscellaneous_items():
+    """
+    Retrieves all miscellaneous items with status "requested" from MongoDB.
+    This can be used by the C# app to display pending items, or internally by the LLM processing logic.
+    """
+    if collection is None:
+        raise HTTPException(status_code=503, detail="Database not connected.")
+
+    try:
+        items_cursor = collection.find({"status": "requested"})
+        # Convert ObjectId to string for each item
+        items = []
+        for item_doc in items_cursor:
+            item_doc['_id'] = str(item_doc['_id']) # Convert ObjectId to string
+            items.append(RoadMisc(**item_doc))
+        return items
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve requested items: {str(e)}")
+
+
+@app.post("/process-misc-with-llm/{item_id}", response_model=RoadMisc)
+async def process_miscellaneous_item_with_llm(item_id: str):
+    """
+    Takes a specific miscellaneous item from MongoDB, sends its details to the LLM
+    on Jetson Orin to get a "fixed" description, updates its status to "fixed"
+    in the database, and returns the updated item.
+    """
+    if collection is None:
+        raise HTTPException(status_code=503, detail="Database not connected.")
+
+    try:
+        # 1. Retrieve the item from MongoDB
+        obj_id = ObjectId(item_id)
+        item_doc = collection.find_one({"_id": obj_id, "status": "requested"})
+
+        if not item_doc:
+            raise HTTPException(status_code=404, detail=f"Item with ID {item_id} not found or not in 'requested' status.")
+        
+        # Convert ObjectId to string for the Pydantic model
+        item_doc['_id'] = str(item_doc['_id'])
+        item = RoadMisc(**item_doc)
+
+        # 2. Prepare prompt for LLM
+        # You can make this prompt more sophisticated based on your needs
+        llm_prompt = f"""You are an AI assistant tasked with describing how a road miscellaneous item was fixed.
+        Given the following information about a road issue, generate a concise description of how it would be typically fixed.
+        Keep the description brief and to the point (max 3 sentences).
+
+        Item Type: {item.type}
+        Location: {item.location}
+        Description: {item.description}
+
+        Example:
+        Item Type: Pothole
+        Location: Main Street near City Hall
+        Description: Large pothole, approximately 2 feet in diameter.
+        Fix Description: The pothole was repaired by cleaning out debris, applying a cold asphalt patch, and compacting it to create a smooth, level surface.
+        """
+
+        # 3. Send to LLM (llama.cpp server)
+        async with httpx.AsyncClient(timeout=600.0) as client: # Increased timeout for LLM inference
+            llm_payload = {
+                "model": LLM_MODEL_NAME, # Use the configured model name
+                "messages": [
+                    {"role": "system", "content": "You are a helpful road maintenance AI assistant."},
+                    {"role": "user", "content": llm_prompt}
+                ],
+                "max_tokens": 200, # Limit LLM response length
+                "temperature": 0.5,
+                "stop": ["\n\n"] # Stop generation at double newline for concise output
+            }
+            llm_response = await client.post(LLAMA_CPP_COMPLETIONS_URL, json=llm_payload)
+            llm_response.raise_for_status() # Raise HTTP errors
+
+            llm_output = llm_response.json()
+            if not llm_output or not llm_output.get("choices"):
+                raise HTTPException(status_code=500, detail="LLM did not return a valid response.")
+            
+            ai_fix_description = llm_output["choices"][0]["message"]["content"].strip()
+
+        # 4. Update item in MongoDB
+        update_data = {
+            "status": "fixed",
+            "ai_fix_description": ai_fix_description,
+            "ai_processed_at": datetime.datetime.now()
+        }
+        
+        update_result = collection.update_one(
+            {"_id": obj_id},
+            {"$set": update_data}
+        )
+
+        if update_result.modified_count == 0:
+            raise HTTPException(status_code=500, detail="Failed to update item status in database.")
+
+        # 5. Retrieve and return the updated item
+        updated_item_doc = collection.find_one({"_id": obj_id})
+        updated_item_doc['_id'] = str(updated_item_doc['_id'])
+        return RoadMisc(**updated_item_doc)
+
+    except ConnectionFailure as e:
+        raise HTTPException(status_code=503, detail=f"MongoDB connection error: {str(e)}")
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to connect to LLM server on Jetson Orin: {exc}")
+    except httpx.HTTPStatusError as exc:
+        status_code = exc.response.status_code
+        detail = f"Error from LLM server (Status {status_code}): {exc.response.text}"
+        # If LLM returns 404, it might mean the model name is wrong
+        if status_code == 404:
+            detail += f". Check if model '{LLM_MODEL_NAME}' is loaded on Jetson Orin and path is correct."
+        raise HTTPException(status_code=status_code, detail=detail)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred during LLM processing: {str(e)}")
+
+
+@app.get("/get-misc-fixed/", response_model=List[RoadMisc])
+async def get_fixed_miscellaneous_items():
+    """
+    Retrieves all miscellaneous items with status "fixed" from MongoDB.
+    """
+    if collection is None:
+        raise HTTPException(status_code=503, detail="Database not connected.")
+
+    try:
+        items_cursor = collection.find({"status": "fixed"})
+        items = []
+        for item_doc in items_cursor:
+            item_doc['_id'] = str(item_doc['_id'])
+            items.append(RoadMisc(**item_doc))
+        return items
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve fixed items: {str(e)}")
+
