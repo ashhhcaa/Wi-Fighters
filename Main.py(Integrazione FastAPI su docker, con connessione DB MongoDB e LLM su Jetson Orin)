@@ -1,0 +1,371 @@
+# main.py
+
+# --- IMPORTS ---
+import os
+import httpx
+import asyncio
+from fastapi import FastAPI, HTTPException, status, BackgroundTasks
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict
+from bson import ObjectId
+from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo.errors import ConnectionFailure
+from dotenv import load_dotenv
+from pydantic_core import core_schema
+from datetime import datetime
+
+# --- 1. Load Environment Variables ---
+load_dotenv()
+
+# --- 2. FastAPI App Instance ---
+app = FastAPI(
+    title="FastAPI LLM & MongoDB Integration",
+    description="An API to interact with a local LLM server and MongoDB.",
+    version="0.1.0",
+)
+
+# --- 3. Configuration from Environment Variables ---
+LLM_SERVER_URL = os.getenv("LLM_SERVER_URL")
+if not LLM_SERVER_URL:
+    raise ValueError("LLM_SERVER_URL not set in .env file. Please check your .env")
+
+MONGO_URI = os.getenv("MONGO_URI")
+MONGO_DB_NAME = os.getenv("MONGO_DB_NAME")
+MONGO_COLLECTION_NAME = os.getenv("MONGO_COLLECTION_NAME")
+
+if not all([MONGO_URI, MONGO_DB_NAME, MONGO_COLLECTION_NAME]):
+    raise ValueError(
+        "MongoDB configuration (MONGO_URI, MONGO_DB_NAME, MONGO_COLLECTION_NAME) "
+        "not fully set in .env file. Please check your .env"
+    )
+
+# --- 4. Global MongoDB Client and Collection Instance (initialized in startup event) ---
+mongo_client: Optional[AsyncIOMotorClient] = None
+db_collection = None 
+
+# --- 5. Pydantic Models for Data Validation and Serialization ---
+class PyObjectId(ObjectId):
+    """
+    Custom Type for PyMongo's ObjectId to be compatible with Pydantic v2.
+    Handles validation from string/ObjectId and serialization to string.
+    """
+    @classmethod
+    def __get_pydantic_core_schema__(cls, source_type: type, handler) -> core_schema.CoreSchema:
+        return core_schema.union_schema(
+            [
+                core_schema.is_instance_schema(ObjectId),
+                core_schema.no_info_after_validator_function(
+                    cls.validate,
+                    core_schema.str_schema()
+                )
+            ],
+            serialization=core_schema.to_string_ser_schema()
+        )
+
+    @classmethod
+    def validate(cls, v):
+        if isinstance(v, ObjectId):
+            return v
+        if not ObjectId.is_valid(v):
+            raise ValueError("Invalid ObjectId format")
+        return ObjectId(v)
+
+# Model for an "issue" to be stored in MongoDB
+class Issue(BaseModel):
+    id: Optional[str] = Field(alias="_id", default=None)
+
+    title: str
+    description: str
+    category: str
+    status: str
+    photoUrl: Optional[str] = Field(None)
+    createdAt: Optional[datetime] = None
+    generated_summary: Optional[str] = Field(None)
+    solution_description: Optional[str] = Field(None)
+
+
+    model_config = {
+        "populate_by_name": True, 
+        "arbitrary_types_allowed": True, 
+        "json_encoders": {
+            ObjectId: str,
+            datetime: lambda dt: dt.isoformat() 
+        },
+        "json_schema_extra": {
+            "example": {
+                "title": "gomma in mezzo alla strada",
+                "description": "c'e una gomma in mezzo alla strada",
+                "category": "intralcio circolazione",
+                "status": "in lavorazione",
+                "photoUrl": "https://www.google.com/",
+                "generated_summary": "Pothole on Elm St. causing tire damage.",
+                "solution_description": "Solution text will appear here."
+            }
+        },
+    }
+
+
+class PromptRequest(BaseModel):
+    prompt: str
+
+
+class LLMResponse(BaseModel):
+    response: str
+
+# --- 6. MongoDB Connection Event Handlers ---
+@app.on_event("startup")
+async def startup_db_client():
+    """
+    Connects to MongoDB when the FastAPI application starts up.
+    Initializes the global mongo_client and db_collection.
+    """
+    global mongo_client, db_collection
+    try:
+        
+        mongo_client = AsyncIOMotorClient(MONGO_URI)
+        db_collection = mongo_client[MONGO_DB_NAME][MONGO_COLLECTION_NAME]
+       
+        await mongo_client.admin.command('ping')
+        print(f"MongoDB connected to {MONGO_URI}, database '{MONGO_DB_NAME}', collection '{MONGO_COLLECTION_NAME}'")
+    except ConnectionFailure as e:
+        print(f"MongoDB connection failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Could not connect to MongoDB: {e}"
+        )
+
+@app.on_event("shutdown")
+async def shutdown_db_client():
+    """
+    Closes the MongoDB connection when the FastAPI application shuts down.
+    """
+    if mongo_client:
+        mongo_client.close() 
+        print("MongoDB connection closed.")
+
+# --- 7. LLM related utility function (used by endpoints) ---
+async def llm_generate_text(prompt: str) -> LLMResponse:
+    try:
+        payload = {
+            "prompt": prompt,
+            "n_predict": 128,
+            "temperature": 0.7,
+            "stop": ["</s>"]
+        }
+        async with httpx.AsyncClient() as client:
+            response = await client.post(f"{LLM_SERVER_URL}/completion", json=payload, timeout=30.0)
+            response.raise_for_status()
+            llama_response = response.json()
+            generated_text = llama_response.get("content", llama_response.get("text", "No content found"))
+            return LLMResponse(response=generated_text)
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Could not connect to LLM server at {exc.request.url}: {exc}"
+        )
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=exc.response.status_code,
+            detail=f"Error from LLM server: {exc.response.status_code} - {exc.response.text}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An unexpected error occurred during LLM generation: {str(e)}"
+        )
+
+# --- 8. Asynchronous Background Task Function ---
+async def process_issue_solution_workflow(issue_id: str):
+    """
+    Background task to handle the timed status changes and LLM solution generation.
+    """
+    object_id = ObjectId(issue_id)
+
+    print(f"Issue {issue_id}: Workflow started. Initial status already set to 'report confermato'.")
+
+  
+    await asyncio.sleep(30)
+    print(f"Issue {issue_id}: 30 seconds passed. Changing status to 'in lavorazione'.")
+
+    # Update status to "in lavorazione"
+    await db_collection.update_one(
+        {"_id": object_id},
+        {"$set": {"status": "in lavorazione"}}
+    )
+
+  
+    await asyncio.sleep(30)
+    print(f"Issue {issue_id}: Another 30 seconds passed. Generating solution and changing status to 'problema risolto'.")
+
+    # Retrieve the issue to get title/description for LLM prompt
+    issue_doc = await db_collection.find_one({"_id": object_id})
+    solution_text = "LLM failed to generate solution." # Default in case of failure
+
+    if issue_doc:
+        try:
+           
+            if "_id" in issue_doc and isinstance(issue_doc["_id"], ObjectId):
+                issue_doc["id"] = str(issue_doc["_id"])
+                del issue_doc["_id"]
+
+            issue_instance = Issue(**issue_doc)
+            llm_prompt = (
+                f"Generate a concise solution description (1-2 sentences) for the following road problem:\n\n"
+                f"Title: {issue_instance.title}\n"
+                f"Description: {issue_instance.description}\n"
+                f"Category: {issue_instance.category}\n"
+                f"Current Status: {issue_instance.status}\n\n"
+                f"Provide a practical solution description:"
+            )
+            llm_response_obj = await llm_generate_text(llm_prompt)
+            solution_text = llm_response_obj.response.strip()
+            print(f"Issue {issue_id}: LLM generated solution: {solution_text}")
+        except Exception as e:
+            print(f"Issue {issue_id}: LLM generation error: {e}")
+            solution_text = f"LLM generation failed: {e}" 
+
+        
+        await db_collection.update_one(
+            {"_id": object_id},
+            {"$set": {
+                "status": "problema risolto",
+                "solution_description": solution_text
+            }}
+        )
+        print(f"Issue {issue_id}: Status changed to 'problema risolto' and solution added.")
+    else:
+        print(f"Issue {issue_id}: Could not find issue {issue_id} for final update in background task.")
+
+
+# --- 9. FastAPI Endpoints ---
+
+@app.get("/")
+async def read_root():
+    return {"message": "Welcome to the FastAPI LLM & MongoDB Integration API!"}
+
+@app.post("/generate", response_model=LLMResponse, summary="Generate text using LLM")
+async def generate_text_endpoint(request: PromptRequest):
+    """
+    Sends a prompt to the LLM server and returns the generated text.
+    This endpoint calls the internal llm_generate_text utility.
+    """
+    return await llm_generate_text(request.prompt)
+
+@app.post("/issues/", response_model=Issue, status_code=status.HTTP_201_CREATED, summary="Create a new issue")
+async def create_issue(issue: Issue):
+    if db_collection is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database not initialized")
+
+    
+    issue_dict = issue.model_dump(by_alias=True, exclude_none=True)
+
+    
+    if "_id" in issue_dict and (issue_dict["_id"] is None or issue_dict["_id"] == ""):
+        del issue_dict["_id"]
+   
+    if "id" in issue_dict:
+        del issue_dict["id"]
+
+
+    try:
+        result = await db_collection.insert_one(issue_dict)
+       
+        inserted_doc = await db_collection.find_one({"_id": result.inserted_id})
+
+        if inserted_doc:
+           
+            inserted_doc["id"] = str(inserted_doc["_id"])
+            del inserted_doc["_id"] 
+
+            return Issue(**inserted_doc)
+        else:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to retrieve created issue.")
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create issue in database: {str(e)}"
+        )
+
+@app.get("/issues/", response_model=List[Issue], summary="Retrieve all issues")
+async def get_all_issues():
+    if db_collection is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database not initialized")
+
+    issues = []
+    cursor = db_collection.find({})
+    all_docs = await cursor.to_list(length=None)
+
+    for doc in all_docs:
+        
+        if "_id" in doc and isinstance(doc["_id"], ObjectId):
+            doc["id"] = str(doc["_id"])
+            del doc["_id"]
+
+        issues.append(Issue(**doc))
+    return issues
+
+@app.post("/issues_with_summary/", response_model=Issue, status_code=status.HTTP_201_CREATED, summary="Create issue with LLM-generated summary")
+async def create_issue_with_summary(issue: Issue):
+    if db_collection is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database not initialized")
+
+    try:
+        llm_response_obj = await llm_generate_text(prompt=f"Summarize this road issue: {issue.description}")
+        issue.generated_summary = llm_response_obj.response
+    except HTTPException as e:
+        print(f"Warning: LLM summary generation failed - {e.detail}")
+        issue.generated_summary = f"Failed to generate summary: {e.detail}"
+    except Exception as e:
+        print(f"Warning: Unexpected error during LLM summary generation - {str(e)}")
+        issue.generated_summary = f"Failed to generate summary (unexpected error): {str(e)}"
+
+    issue_dict = issue.model_dump(by_alias=True, exclude_unset=True)
+    if "_id" in issue_dict and (issue_dict["_id"] is None or issue_dict["_id"] == ""):
+        del issue_dict["_id"]
+    if "id" in issue_dict:
+        del issue_dict["id"]
+
+
+    try:
+        result = await db_collection.insert_one(issue_dict)
+        inserted_doc = await db_collection.find_one({"_id": result.inserted_id})
+
+        if inserted_doc:
+            inserted_doc["id"] = str(inserted_doc["_id"])
+            del inserted_doc["_id"]
+            return Issue(**inserted_doc)
+        else:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to retrieve created issue with summary.")
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create issue with summary in database: {str(e)}"
+        )
+
+@app.post("/issues/{issue_id}/initiate_solution", status_code=status.HTTP_202_ACCEPTED,
+          summary="Initiate a timed workflow to solve an issue with LLM generation")
+async def initiate_solution_workflow(issue_id: str, background_tasks: BackgroundTasks):
+    if db_collection is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database not initialized")
+
+    if not ObjectId.is_valid(issue_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Issue ID format")
+
+    object_id = ObjectId(issue_id)
+
+    
+    issue_check = await db_collection.find_one({"_id": object_id})
+    if not issue_check:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Issue with ID {issue_id} not found")
+
+    
+    await db_collection.update_one(
+        {"_id": object_id},
+        {"$set": {"status": "report confermato"}}
+    )
+    print(f"API called: Issue {issue_id} status set to 'report confermato'. Background task dispatched.")
+
+    background_tasks.add_task(process_issue_solution_workflow, issue_id)
+
+    return {"message": f"Solution workflow initiated for issue {issue_id}. Status set to 'report confermato'. Please poll GET /issues/{{issue_id}} for updates."}
