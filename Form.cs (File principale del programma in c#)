@@ -1,0 +1,344 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Diagnostics;
+using System.Drawing; 
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using System.Net.Http;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Net; 
+
+namespace FixMyCity
+{
+    public partial class Form1 : Form
+    {
+        private readonly HttpClient _httpClient = new HttpClient();
+        private string _currentIssueId; 
+        private System.Windows.Forms.Timer _pollingTimer;
+
+        public Form1()
+        {
+            InitializeComponent();
+            _httpClient.BaseAddress = new Uri("http://10.10.14.223:8001/");
+
+            // Initialize and configure the polling timer
+            _pollingTimer = new System.Windows.Forms.Timer();
+            _pollingTimer.Interval = 5000; 
+            _pollingTimer.Tick += PollingTimer_Tick; 
+
+            
+            lstIssues.HorizontalScrollbar = true;
+        }
+
+        private async void Form1_Load(object sender, EventArgs e)
+        {
+            _pollingTimer.Start();
+            await LoadAllIssuesAsync();
+        }
+
+        // --- lstIssues_SelectedIndexChanged to populate all textboxes ---
+        private void lstIssues_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (lstIssues.SelectedItem is IssueDisplayWrapper selectedWrapper)
+            {
+                
+                txtIssueId.Text = selectedWrapper.Issue.Id;
+                txtTitle.Text = selectedWrapper.Issue.Title;
+                txtDescription.Text = selectedWrapper.Issue.Description;
+                txtCategory.Text = selectedWrapper.Issue.Category;
+                txtStatus.Text = selectedWrapper.Issue.Status;
+                txtPhotoUrl.Text = selectedWrapper.Issue.PhotoUrl;
+                
+                txtSolutionDescription.Text = selectedWrapper.Issue.SolutionDescription;
+
+                _currentIssueId = selectedWrapper.Issue.Id; 
+            }
+            else
+            {
+                
+                txtIssueId.Text = string.Empty;
+                txtTitle.Text = string.Empty;
+                txtDescription.Text = string.Empty;
+                txtCategory.Text = string.Empty;
+                txtStatus.Text = string.Empty;
+                txtPhotoUrl.Text = string.Empty;
+                txtSolutionDescription.Text = string.Empty; 
+                _currentIssueId = null; 
+            }
+        }
+       
+
+        private async void PollingTimer_Tick(object sender, EventArgs e)
+        {
+            await LoadAllIssuesAsync();
+        }
+
+        private async void btnLoadIssues_Click(object sender, EventArgs e)
+        {
+            await LoadAllIssuesAsync();
+        }
+
+       s
+        private async Task LoadAllIssuesAsync()
+        {
+            try
+            {
+                
+                _pollingTimer.Stop();
+
+                lblStatus.Text = "Status: Loading issues...";
+                lstIssues.Items.Clear(); 
+
+                var response = await _httpClient.GetAsync("issues/");
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    string errorDetail = "No additional error details available.";
+                    if (response.Content != null)
+                    {
+                        try
+                        {
+                            errorDetail = await response.Content.ReadAsStringAsync();
+                        }
+                        catch (Exception exInner)
+                        {
+                            errorDetail = $"Could not read error response content: {exInner.Message}";
+                        }
+                    }
+                    MessageBox.Show($"HTTP Request Error loading issues: {response.ReasonPhrase}\nStatus Code: {(int)response.StatusCode}\nDetails from Server: {errorDetail}\nCheck FastAPI server connection.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    lblStatus.Text = "Error: Failed to load issues.";
+                    return;
+                }
+
+                var jsonString = await response.Content.ReadAsStringAsync();
+
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var issues = JsonSerializer.Deserialize<List<Issue>>(jsonString, options);
+
+                if (issues != null && issues.Any())
+                {
+                    foreach (var issue in issues)
+                    {
+                        lstIssues.Items.Add(new IssueDisplayWrapper(issue));
+                    }
+                    lblStatus.Text = $"Status: Loaded {issues.Count} issues.";
+
+                    
+                    int widestTextWidth = 0;
+                    using (Graphics g = lstIssues.CreateGraphics()) 
+                    {
+                        foreach (IssueDisplayWrapper wrapper in lstIssues.Items)
+                        {
+                            
+                            int currentWidth = (int)g.MeasureString(wrapper.ToString(), lstIssues.Font).Width;
+                            if (currentWidth > widestTextWidth)
+                            {
+                                widestTextWidth = currentWidth;
+                            }
+                        }
+                    }
+                    
+                    lstIssues.HorizontalExtent = widestTextWidth + 5; 
+
+                    lstIssues.Refresh(); 
+                }
+                else
+                {
+                    lblStatus.Text = "Status: No issues found.";
+                }
+            }
+            catch (JsonException jsonEx)
+            {
+                MessageBox.Show($"JSON Deserialization Error loading issues: {jsonEx.Message}\nCheck server response format.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                lblStatus.Text = "Error: Invalid data received.";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"An unexpected error occurred: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                lblStatus.Text = "Error: " + ex.Message;
+            }
+            finally
+            {
+                
+                _pollingTimer.Start();
+            }
+        }
+
+
+        private async void button1_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                lblStatus.Text = "Status: Creating new issue...";
+
+                var newIssue = new Issue
+                {
+                    Title = txtTitle.Text,
+                    Description = txtDescription.Text,
+                    Category = txtCategory.Text,
+                    Status = txtStatus.Text,
+                    PhotoUrl = txtPhotoUrl.Text
+                };
+
+                string serializedJson = System.Text.Json.JsonSerializer.Serialize(newIssue);
+                MessageBox.Show($"JSON being sent:\n{serializedJson}", "Debug JSON Payload", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                var jsonContent = new StringContent(
+                    serializedJson,
+                    System.Text.Encoding.UTF8,
+                    "application/json"
+                );
+
+                var response = await _httpClient.PostAsync("issues/", jsonContent);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    string errorDetail = "No additional error details available.";
+                    if (response.Content != null)
+                    {
+                        try
+                        {
+                            errorDetail = await response.Content.ReadAsStringAsync();
+                        }
+                        catch (Exception exInner)
+                        {
+                            errorDetail = $"Could not read error response content: {exInner.Message}";
+                        }
+                    }
+                    MessageBox.Show($"HTTP Request Error during issue creation: {response.ReasonPhrase}\nStatus Code: {(int)response.StatusCode}\nDetails from Server: {errorDetail}\nEnsure FastAPI is running and accessible, and check your input data.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    lblStatus.Text = "Error: Failed to create issue (HTTP).";
+                    return;
+                }
+
+                var responseString = await response.Content.ReadAsStringAsync();
+                var options = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var createdIssue = System.Text.Json.JsonSerializer.Deserialize<Issue>(responseString, options);
+
+                if (createdIssue != null && !string.IsNullOrEmpty(createdIssue.Id))
+                {
+                    MessageBox.Show($"Issue created successfully! ID: {createdIssue.Id}", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    lblStatus.Text = $"Status: Issue '{createdIssue.Id}' created.";
+                    txtIssueId.Text = createdIssue.Id;
+                    _currentIssueId = createdIssue.Id; 
+
+                    await LoadAllIssuesAsync(); 
+                }
+                else
+                {
+                    MessageBox.Show("Issue created, but no ID was returned from FastAPI.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    lblStatus.Text = "Status: Issue created, but no ID from server.";
+                }
+
+                txtTitle.Text = "";
+                txtDescription.Text = "";
+                txtCategory.Text = "";
+                txtStatus.Text = "";
+                txtPhotoUrl.Text = "";
+            }
+            catch (System.Text.Json.JsonException jsonEx)
+            {
+                MessageBox.Show($"JSON Deserialization Error after issue creation: {jsonEx.Message}\nCheck server response format.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                lblStatus.Text = "Error: Failed to create issue (JSON).";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"An unexpected error occurred during issue creation: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                lblStatus.Text = "Error: An unexpected error occurred.";
+            }
+        }
+
+        
+        private async void btnSolveProblem_Click(object sender, EventArgs e)
+        {
+            string issueId = txtIssueId.Text.Trim();
+
+            if (string.IsNullOrEmpty(issueId))
+            {
+                MessageBox.Show("Please select an issue from the list or enter an Issue ID to resolve.", "Missing Issue ID", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            lblStatus.Text = $"Status: Initiating AI solution for issue {issueId}...";
+            _currentIssueId = issueId; 
+
+            try
+            {
+                string requestUrl = $"issues/{issueId}/initiate_solution";
+                var response = await _httpClient.PostAsync(requestUrl, null);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var responseString = await response.Content.ReadAsStringAsync();
+                    MessageBox.Show($"AI solution workflow initiated for issue {issueId}!\nServer Response: {responseString}", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    lblStatus.Text = $"Status: AI workflow started for {issueId}.";
+
+                    await LoadAllIssuesAsync(); 
+                }
+                else
+                {
+                    string errorDetail = "No additional error details available.";
+                    if (response.Content != null)
+                    {
+                        try
+                        {
+                            errorDetail = await response.Content.ReadAsStringAsync();
+                        }
+                        catch (Exception exInner)
+                        {
+                            errorDetail = $"Could not read error response content: {exInner.Message}";
+                        }
+                    }
+                    MessageBox.Show($"HTTP Request Error initiating AI solution for issue {issueId}: {response.ReasonPhrase}\nStatus Code: {(int)response.StatusCode}\nDetails from Server: {errorDetail}\nEnsure FastAPI is running and accessible.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    lblStatus.Text = $"Error: Failed to initiate AI solution for {issueId}.";
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"An unexpected error occurred while initiating AI solution: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                lblStatus.Text = "Error: An unexpected error occurred.";
+            }
+        }
+
+        
+        private class IssueDisplayWrapper
+        {
+            public Issue Issue { get; }
+
+            public IssueDisplayWrapper(Issue issue)
+            {
+                Issue = issue;
+            }
+
+            
+            public override string ToString()
+            {
+                
+                if (!string.IsNullOrEmpty(Issue.SolutionDescription))
+                {
+                    
+                    return $"ID: {Issue.Id} | Title: {Issue.Title} | Status: {Issue.Status} | Solution: {Issue.SolutionDescription.Substring(0, Math.Min(Issue.SolutionDescription.Length, 50))}...";
+                }
+                return $"ID: {Issue.Id} | Title: {Issue.Title} | Status: {Issue.Status}";
+            }
+        }
+
+        // ----- Other event handlers (can remain as they are or be removed if empty/unused) -----
+        private void textBox1_TextChanged(object sender, EventArgs e) { /* Empty */ }
+        private void label2_Click(object sender, EventArgs e) { /* Empty */ }
+        private void label4_Click(object sender, EventArgs e) { /* Empty */ }
+        private void linkLabel1_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
+        {
+            Process.Start(new ProcessStartInfo("https://imgbb.com/") { UseShellExecute = true });
+        }
+        private void textBox3_TextChanged(object sender, EventArgs e) { /* Empty */ }
+        private void label6_Click(object sender, EventArgs e) { /* Empty */ }
+        
+    }
+
+   
+}
