@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fix My City - AI Issue Tracker</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'primary': '#4f46e5',
+                        'secondary': '#f59e0b',
+                        'success': '#10b981',
+                        'danger': '#ef4444',
+                        'surface': '#f9fafb',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom styles for a clean, non-Blazor look */
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        .card { transition: transform 0.1s ease-in-out, box-shadow 0.1s ease-in-out; }
+        .card:hover { transform: translateY(-2px); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1); }
+        .issue-list-item { cursor: pointer; }
+        .issue-list-item.selected { background-color: #e0f2fe; border-left: 4px solid #3b82f6; }
+        
+        /* Message Box Styling */
+        #message-box {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+        }
+        #message-box.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <!-- Custom Message Box (Replaces alert() and MessageBox.Show()) -->
+    <div id="message-box" class="hidden">
+        <div class="bg-white p-6 rounded-xl shadow-2xl border-t-4 border-primary max-w-sm">
+            <h3 id="msg-title" class="font-bold text-xl mb-3 text-gray-800"></h3>
+            <p id="msg-content" class="text-gray-600 text-sm"></p>
+            <div class="mt-4 flex justify-end">
+                <button id="msg-close" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-indigo-600 transition">OK</button>
+            </div>
+        </div>
+    </div>
+    <div id="overlay" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50"></div>
+
+
+    <header class="text-center mb-10">
+        <h1 class="text-4xl font-extrabold text-gray-900">Fix My City</h1>
+        <p class="text-lg text-gray-500 mt-2" id="status-message">Status: Loading...</p>
+    </header>
+
+    <main class="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-7xl mx-auto">
+        
+        <!-- Column 1: Issue List -->
+        <section class="card bg-white p-6 rounded-xl shadow-lg flex flex-col">
+            <h2 class="text-2xl font-semibold mb-4 text-gray-700">Reported Issues</h2>
+            <div id="issue-list" class="space-y-3 overflow-y-auto flex-grow h-96 min-h-64">
+                <!-- Issues will be dynamically inserted here -->
+                <p class="text-gray-400">Loading issues from API...</p>
+            </div>
+        </section>
+
+        <!-- Column 2: Creation / Resolution / Details Form -->
+        <section class="card bg-white p-6 rounded-xl shadow-lg">
+            <h2 class="text-2xl font-semibold mb-6 text-gray-700">Issue Details & Actions</h2>
+
+            <form id="issue-form" class="space-y-4">
+                <input type="text" id="input-title" placeholder="Title (Required)" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary">
+                <textarea id="input-description" placeholder="Detailed Description (Required)" rows="3" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary"></textarea>
+                <input type="text" id="input-category" placeholder="Category (e.g., Roads, Lights)" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary">
+                <input type="text" id="input-photourl" placeholder="Photo URL (Optional)" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary">
+                
+                <button type="submit" id="btn-create" 
+                        class="w-full py-3 bg-success text-white font-bold rounded-lg shadow-md hover:bg-emerald-600 transition disabled:opacity-50">
+                    Create New Issue
+                </button>
+            </form>
+
+            <div class="mt-8 pt-6 border-t border-gray-200 space-y-4">
+                <p class="text-xl font-semibold text-gray-700">Selected Issue:</p>
+                <div class="bg-surface p-4 rounded-lg space-y-2">
+                    <p class="text-sm font-medium text-gray-500">Issue ID: <span id="display-id" class="text-gray-700 font-bold">--</span></p>
+                    <p class="text-sm font-medium text-gray-500">Status: <span id="display-status" class="text-gray-700 font-bold">--</span></p>
+                    <p class="text-sm font-medium text-gray-500">Solution Description:</p>
+                    <textarea id="display-solution" rows="4" readonly 
+                              class="w-full p-2 text-sm bg-white border border-gray-300 rounded-lg resize-none"></textarea>
+                </div>
+                
+                <button id="btn-resolve" disabled 
+                        class="w-full py-3 bg-primary text-white font-bold rounded-lg shadow-md hover:bg-indigo-600 transition disabled:opacity-50">
+                    Initiate AI Solution Workflow
+                </button>
+
+                <!-- Link to your image hosting site -->
+                <p class="text-center text-xs text-gray-400 mt-4">
+                    Need a Photo URL? Upload an image <a id="imgbb-link" href="#" class="text-primary hover:underline">here</a>.
+                </p>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        // --- CONFIGURATION ---
+        // qui ci va l'ip pubblico del portatile dove c'e hostata la macchina virtuale
+        //test con ngrok
+        //const API_BASE_URL = "http://5.154.212.2:8001/";
+        const API_BASE_URL = " https://diatomaceous-mushily-angla.ngrok-free.dev/";
+        const POLLING_INTERVAL = 5000; // 5 seconds
+        
+        // --- STATE MANAGEMENT ---
+        let allIssues = [];
+        let currentIssueId = null; 
+
+        // --- DOM ELEMENTS ---
+        const statusMessageEl = document.getElementById('status-message');
+        const issueListEl = document.getElementById('issue-list');
+        const displayIdEl = document.getElementById('display-id');
+        const displayStatusEl = document.getElementById('display-status');
+        const displaySolutionEl = document.getElementById('display-solution');
+        const btnResolveEl = document.getElementById('btn-resolve');
+        const formEl = document.getElementById('issue-form');
+        const btnCreateEl = document.getElementById('btn-create');
+
+        // --- MESSAGE BOX FUNCTIONS (REPLACES WinForms MessageBox) ---
+        const msgBoxEl = document.getElementById('message-box');
+        const overlayEl = document.getElementById('overlay');
+        const msgTitleEl = document.getElementById('msg-title');
+        const msgContentEl = document.getElementById('msg-content');
+        const msgCloseBtn = document.getElementById('msg-close');
+
+        function showMessage(title, content) {
+            msgTitleEl.textContent = title;
+            msgContentEl.textContent = content;
+            overlayEl.classList.remove('hidden');
+            msgBoxEl.classList.add('show');
+            msgBoxEl.classList.remove('hidden');
+        }
+
+        msgCloseBtn.onclick = () => {
+            msgBoxEl.classList.remove('show');
+            overlayEl.classList.add('hidden');
+            setTimeout(() => {
+                msgBoxEl.classList.add('hidden');
+            }, 300);
+        };
+
+        // --- CORE LOGIC (REPLACES C# LoadAllIssuesAsync) ---
+
+        /**
+         * Fetches all issues from the API and updates the UI.
+         */
+        async function loadAllIssues() {
+            statusMessageEl.textContent = "Status: Loading issues...";
+            
+            try {
+                const response = await fetch(API_BASE_URL + 'issues/');
+                
+                if (!response.ok) {
+                    const errorDetail = await response.text();
+                    showMessage('HTTP Error', `Failed to load issues. Status: ${response.status}. Details: ${errorDetail}`);
+                    statusMessageEl.textContent = `Error: Failed to load issues.`;
+                    return;
+                }
+                
+                const data = await response.json();
+                allIssues = data;
+                renderIssueList(data);
+                statusMessageEl.textContent = `Status: Loaded ${data.length} issues at ${new Date().toLocaleTimeString()}.`;
+
+            } catch (error) {
+                showMessage('Connection Error', `Could not connect to API at ${API_BASE_URL}. Check your C# backend/API server.`);
+                statusMessageEl.textContent = `Error: API connection failed.`;
+                issueListEl.innerHTML = '<p class="text-danger font-semibold">Could not connect to the API server.</p>';
+            }
+        }
+
+        /**
+         * Renders the list of issues, maintaining selection if possible.
+         */
+        function renderIssueList(issues) {
+            issueListEl.innerHTML = '';
+            
+            if (issues.length === 0) {
+                issueListEl.innerHTML = '<p class="text-gray-500">No issues found.</p>';
+                return;
+            }
+
+            issues.forEach(issue => {
+                const item = document.createElement('div');
+                item.className = 'issue-list-item card p-3 rounded-lg border border-gray-200 hover:bg-gray-50';
+                if (issue.id === currentIssueId) {
+                    item.classList.add('selected');
+                    updateDetailsDisplay(issue);
+                }
+                item.dataset.id = issue.id;
+                
+                const solutionSnippet = issue.solution_description 
+                    ? ` | Solved: ${issue.solution_description.substring(0, Math.min(issue.solution_description.length, 30))}...`
+                    : '';
+
+                item.innerHTML = `
+                    <p class="font-bold text-sm text-gray-800">${issue.title}</p>
+                    <p class="text-xs text-gray-500">ID: ${issue.id} | Status: ${issue.status}${solutionSnippet}</p>
+                `;
+                
+                item.addEventListener('click', () => selectIssue(issue.id));
+                issueListEl.appendChild(item);
+            });
+        }
+        
+        /**
+         * Handles selection of an issue from the list. (Replaces lstIssues_SelectedIndexChanged)
+         */
+        function selectIssue(id) {
+            currentIssueId = id;
+            
+            // Remove 'selected' class from all, then add to the clicked item
+            document.querySelectorAll('.issue-list-item').forEach(el => el.classList.remove('selected'));
+            const selectedItem = document.querySelector(`.issue-list-item[data-id="${id}"]`);
+            if (selectedItem) {
+                selectedItem.classList.add('selected');
+            }
+
+            const issue = allIssues.find(i => i.id === id);
+            if (issue) {
+                updateDetailsDisplay(issue);
+                btnResolveEl.disabled = false;
+            } else {
+                updateDetailsDisplay(null);
+                btnResolveEl.disabled = true;
+            }
+        }
+
+        /**
+         * Updates the detail panel with data from the selected issue.
+         */
+        function updateDetailsDisplay(issue) {
+            if (issue) {
+                displayIdEl.textContent = issue.id;
+                displayStatusEl.textContent = issue.status;
+                displaySolutionEl.value = issue.solution_description || "No AI solution generated yet.";
+            } else {
+                displayIdEl.textContent = "--";
+                displayStatusEl.textContent = "--";
+                displaySolutionEl.value = "";
+            }
+        }
+
+
+        // --- EVENT HANDLERS (REPLACES C# Button Click Methods) ---
+
+        /**
+         * Creates a new issue. (Replaces button1_Click)
+         */
+        formEl.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            btnCreateEl.disabled = true;
+            statusMessageEl.textContent = "Status: Creating new issue...";
+
+            const newIssue = {
+                title: document.getElementById('input-title').value,
+                description: document.getElementById('input-description').value,
+                category: document.getElementById('input-category').value,
+                status: 'new', // Assuming the API defaults this, but forcing here for clarity
+                photo_url: document.getElementById('input-photourl').value || null,
+            };
+
+            try {
+                const response = await fetch(API_BASE_URL + 'issues/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(newIssue)
+                });
+                
+                if (!response.ok) {
+                    const errorDetail = await response.text();
+                    showMessage('Creation Error', `Failed to create issue. Status: ${response.status}. Details: ${errorDetail}`);
+                    statusMessageEl.textContent = "Error: Failed to create issue.";
+                    return;
+                }
+
+                const createdIssue = await response.json();
+                showMessage('Success!', `Issue created successfully! ID: ${createdIssue.id}`);
+                
+                // Clear form inputs
+                formEl.reset(); 
+                
+                // Refresh data
+                await loadAllIssues(); 
+
+            } catch (error) {
+                showMessage('Connection Error', 'Could not reach the API to create the issue. Is the API running?');
+                statusMessageEl.textContent = `Error: API connection failed.`;
+            } finally {
+                btnCreateEl.disabled = false;
+            }
+        });
+
+        /**
+         * Initiates the AI solution workflow. (Replaces btnSolveProblem_Click)
+         */
+        btnResolveEl.addEventListener('click', async () => {
+            if (!currentIssueId) {
+                showMessage('Missing ID', 'Please select an issue from the list first.');
+                return;
+            }
+            
+            btnResolveEl.disabled = true;
+            statusMessageEl.textContent = `Status: Initiating AI solution for issue ${currentIssueId}...`;
+            
+            try {
+                const requestUrl = `issues/${currentIssueId}/initiate_solution`;
+                
+                const response = await fetch(API_BASE_URL + requestUrl, {
+                    method: 'POST',
+                    // Note: No body or content-type needed for a simple POST trigger
+                });
+
+                if (!response.ok) {
+                    const errorDetail = await response.text();
+                    showMessage('AI Solution Error', `Failed to initiate AI workflow. Status: ${response.status}. Details: ${errorDetail}`);
+                    statusMessageEl.textContent = "Error initiating AI solution.";
+                    return;
+                }
+                
+                showMessage('AI Initiated', `AI solution workflow successfully started for issue ${currentIssueId}. The status will update shortly.`);
+                await loadAllIssues(); // Refresh to show immediate status change (e.g., to "confirmed")
+
+            } catch (error) {
+                showMessage('Connection Error', 'Could not reach the API to start the AI solution.');
+                statusMessageEl.textContent = `Error: API connection failed.`;
+            } finally {
+                btnResolveEl.disabled = false;
+            }
+        });
+
+        // --- INITIALIZATION ---
+        
+        /**
+         * Starts the continuous polling (replaces the WinForms Timer)
+         */
+        function startPolling() {
+            // Start the initial load
+            loadAllIssues();
+            
+            // Set up the interval for continuous refresh
+            setInterval(loadAllIssues, POLLING_INTERVAL);
+        }
+
+        window.onload = startPolling;
+        
+        // Handle external link
+        document.getElementById('imgbb-link').onclick = (e) => {
+            e.preventDefault();
+            window.open('https://imgbb.com/', '_blank');
+        };
+        
+    </script>
+</body>
+</html>
