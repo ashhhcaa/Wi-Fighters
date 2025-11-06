@@ -1,0 +1,232 @@
+[{
+  "_id": {
+    "$oid": "685d41f51b7d4c50cce73c7b"
+  },
+  "title": "gomma in mezzo alla strada",
+  "description": "c'e una gomma in mezzo alla strada",
+  "category": "intralcio circolazione",
+  "status": "in lavorazione",
+  "photoUrl": "https://www.google.com/",
+  "createdAt": {
+    "$date": "2025-06-26T12:49:57.582Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68625da29c26b5cdb88e245b"
+  },
+  "title": "cassonetto in fiamme",
+  "description": "c'e un cassonetto che prende fuoco",
+  "category": "rifiuti",
+  "status": "in lavorazione",
+  "photoUrl": "https://ibb.co/4nJBBjJ7",
+  "createdAt": {
+    "$date": "2025-06-30T09:49:21.961Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "686643506fb6bbbade6647e6"
+  },
+  "title": "gomma in mezzo alla strada",
+  "description": "c'e una gomma in mezzo alla strada",
+  "category": "intralcio circolazione",
+  "status": "in lavorazione",
+  "photoUrl": "https://www.google.com/",
+  "createdAt": null,
+  "generated_summary": "Pothole on Elm St. causing tire damage."
+},
+{
+  "_id": {
+    "$oid": "6866483cc17736322e93657e"
+  },
+  "title": "Buco profondo sulla strada",
+  "description": "C'è un buco molto profondo in Via Roma, angolo con Via Milano. È pericoloso per i motociclisti.",
+  "category": "manutenzione stradale",
+  "status": "problema risolto",
+  "photoUrl": "http://example.com/buco.jpg",
+  "solution_description": "1. Il buco è stato risolto con successo e la strada è stata ristrutturata.\n\n2. È stato deciso di aprire una nuova strada con l'aiuto di una compagnia privata.\n\n3. Si è deciso di ricostruire la strada con l'aiuto di un'agenzia di architettura.\n\n4. La strada è stata rinnovata con l'aiuto di una compagnia privata, insieme all'applicazione di una tecnologia che migliora la sicure"
+},
+{
+  "_id": {
+    "$oid": "6866520e87704ddea23d7602"
+  },
+  "title": "",
+  "description": "",
+  "category": "",
+  "status": "",
+  "photoUrl": "",
+  "createdAt": {
+    "$date": "2025-07-03T09:49:02.250Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68665313e873ebc43972287f"
+  },
+  "title": "",
+  "description": "",
+  "category": "",
+  "status": "",
+  "photoUrl": "",
+  "createdAt": {
+    "$date": "2025-07-03T09:53:23.768Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "6866546d7e754cf8af544d4a"
+  },
+  "title": "",
+  "description": "",
+  "category": "",
+  "status": "",
+  "photoUrl": "",
+  "createdAt": {
+    "$date": "2025-07-03T09:59:09.430Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "686f8a5a1d91c9de20a1d9d2"
+  },
+  "title": "Road Problem Example",
+  "description": "There is a large pothole near the main intersection.",
+  "category": "Road Hazard",
+  "status": "problema risolto",
+  "photoUrl": "http://example.com/photo123.jpg",
+  "createdAt": {
+    "$date": "2025-07-10T12:00:00.000Z"
+  },
+  "solution_description": "1. Step 1: Identify the location of the pothole.\n\n2. Step 2: Apply a temporary solution, such as adding sand or chips to the area, to prevent further damage to the road.\n\n3. Step 3: Conduct a thorough inspection of the road, including inspecting any other issues or hazards that could have caused the pothole.\n\n4. Step 4: If the pothole is deemed to be a permanent issue, then consider implementing a long-term solution, such as replacing the pavement or installing a drainage"
+},
+{
+  "_id": {
+    "$oid": "686f8fc11d91c9de20a1d9d3"
+  },
+  "title": "test",
+  "description": "test",
+  "category": "test",
+  "status": "test",
+  "photoUrl": "http://google.com"
+},
+{
+  "_id": {
+    "$oid": "686f907e1d91c9de20a1d9d4"
+  },
+  "title": "test",
+  "description": "test",
+  "category": "test",
+  "status": "test",
+  "photoUrl": "test"
+},
+{
+  "_id": {
+    "$oid": "686f92c21d91c9de20a1d9d5"
+  },
+  "title": "fondo stradale rovinato",
+  "description": "il fondo stradale in via carlo marx è estremamente rovinato e potrebbe causare danni alle autovetture in passaggio",
+  "category": "manutenzione stradale",
+  "status": "problema risolto",
+  "photoUrl": "fakeurl.com",
+  "solution_description": "Il problema è stato riscontrato nella zona di via carlo marx, dove la rovinosità del fondo ha causato una pericolosa rovinatura delle vie di passaggio per le vetture. Ci sono stati danni a numerosi veicoli che hanno dovuto passare sul stradale. L'operatore del servizio di manutenzione stradale ha preso in considerazione l'acquisto di nuovi pneumatici per il braccio di testa delle vie di passaggio. Sono stati inoltre messi in piedi dei pannelli"
+},
+{
+  "_id": {
+    "$oid": "686f97ab1d91c9de20a1d9d6"
+  },
+  "title": "tronco in mezzo alla strada",
+  "description": "dopo il maltempo è caduto un tronco in mezzo alla strada in via del ponte",
+  "category": "manutenzione stradale",
+  "status": "problema risolto",
+  "photoUrl": "fakeurl.com",
+  "solution_description": "Soluzione: la manutenzione deve essere eseguita sui tre pilastri che sostengono il troncone. La prima azione consiste nell'apertura di un nuovo tunnel di rifornimento, che sarà completato da una macchina pneumatica. La seconda azione consiste nell'apertura di un nuovo tunnel di risalita. La terza azione consiste nella sostituzione dei pilastri, che dovrebbero essere sostituiti con dei nuovi pilastri a pianta circolare, e che saranno realizzati"
+},
+{
+  "_id": {
+    "$oid": "686f98511d91c9de20a1d9d7"
+  },
+  "title": "gatto stecchito per strada",
+  "description": "c'è il corpo morto di un gatto che è stato preso sotto da un camion in via fontivegge",
+  "category": "pulizia stradale",
+  "status": "problema risolto",
+  "photoUrl": "deadcat.com",
+  "solution_description": "Per far funzionare la pulizia del tratto di strade da fontiveggi, il team ha deciso di utilizzare un camion con la tecnologia \"robotica\" che offre una nuova esperienza in ambito dell'automazione.\n\nIl camion, dotato di un dispositivo di navigazione e di un sistema di monitoraggio della temperatura, può essere inviato su una linea di montaggio, senza incontrare problemi di sicurezza.\n\nDopo aver eseguito un'analisi della strada e la fine"
+},
+{
+  "_id": {
+    "$oid": "686f99471d91c9de20a1d9d8"
+  },
+  "title": "clandestino ubriaco",
+  "description": "c'è un uomo ubriaco che barcolla in mezzo alla strada in via picco il passo",
+  "category": "sicurezza stradale",
+  "status": "problema risolto",
+  "photoUrl": "matteogay.com",
+  "solution_description": "We are working on a solution to the problem of a man who barrels in the middle of the street in a busy street corner, which is in the vicinity of the passage.\n\nOur solution involves the installation of a traffic control system that will detect any pedestrian crossing the street corner, and then turn the traffic lights to green.\n\nThe system will be integrated with sensors and cameras that monitor the pedestrian crossing and send a signal to the traffic lights, allowing them to turn green, thereby preventing any accidents.\n\nThis solution aims to improve the safety of ped"
+},
+{
+  "_id": {
+    "$oid": "686f9a291d91c9de20a1d9d9"
+  },
+  "title": "uomo completamente nudo ",
+  "description": "c'è un uomo completamente nudo all'interno del centro commercale Quasar Village",
+  "category": "pubblica indecenza",
+  "status": "problema risolto",
+  "photoUrl": "gay.com",
+  "solution_description": "- We have a problem with a man who is completely nude inside the Quasaar Village Center. The situation has been reported to the police by a nearby resident.\n- We have the task to find out the reason behind the man's nakedness.\n- We start by examining the area, making sure that there are no signs of a sexual assault or any other criminal activity.\n- We find out that there is no sign of any crime, and the man is just naked.\n- We contact the police to inform them of the situation.\n- The police arrive at the scene and investigate"
+},
+{
+  "_id": {
+    "$oid": "687765dd5f3e541cd49aa941"
+  },
+  "title": "cartelo stradale piegato",
+  "description": "c'e un cartello stradale piegato che intralcia la circolazione",
+  "category": "manutenzione stradale",
+  "status": "problema risolto",
+  "photoUrl": "fakeurl.com",
+  "solution_description": "LLM generation failed: 503: Could not connect to LLM server at http://10.10.15.92:8000/completion: All connection attempts failed"
+},
+{
+  "_id": {
+    "$oid": "687766e35f3e541cd49aa942"
+  },
+  "title": "cartello stradale piegato",
+  "description": "c'e un cartello stradale piegato che intralcia la circolazione in via del prato ",
+  "category": "manutenzione stradale",
+  "status": "problema risolto",
+  "photoUrl": "fakeurl.com",
+  "solution_description": "- Describe the problem in detail, including the location of the obstruction and the cause of the problem.\n- Provide a solution that can be implemented to resolve the problem.\n- Explain the expected outcome and the benefits of implementing the solution.\n- Use diagrams or images to help illustrate the solution.\n- Ensure that the solution is easy to understand and follow for the audience.\n\nE.g.\n\n- Situation: a car is parked in a tight spot on a busy street.\n- Obstruction: a mailbox that's blocking the car's"
+},
+{
+  "_id": {
+    "$oid": "68776dad5f3e541cd49aa943"
+  },
+  "title": "macchina a fuoco",
+  "description": "c'e una macchina che prende fuoco e potrebbe causare danni e un incendio in via settevalli",
+  "category": "sicurezza stradale",
+  "status": "problema risolto",
+  "photoUrl": "google.com",
+  "solution_description": "Con il supporto di un sistema di monitoraggio e controllo di sicurezza, è possibile risolvere il problema di una macchina che, quando inizia a muoversi, genera fuoco e può causare danni e un incendio in via di strade. La macchina è stata impiegata per la ricerca di oggetti in un locale, ma nonostante il controllo dei sensori di sicurezza, il fuoco non si è risolto e il contatto con il suolo ha portato alla generazione di uno sprof"
+},
+{
+  "_id": {
+    "$oid": "6877716d5f3e541cd49aa944"
+  },
+  "title": "Perdita di una tubatura",
+  "description": "C'e una tubatura in via dei priori che perde acqua e sta allagando la strada rendendola inaccessibile, potrebbe causare danni alle autovetture",
+  "category": "manutenzione stradale",
+  "status": "problema risolto",
+  "photoUrl": "google.com",
+  "solution_description": "1. Identify the problem area: The tubatura is located at the intersection of Via dei Priori and Via del Corso.\n2. Identify the cause: The tubatura is being affected by a leak in a nearby building.\n3. Provide a solution: We will block the leak and restore the tubatura to service.\n4. Timeline: The work should take no longer than two weeks to complete, with regular visits to the site to monitor the progress of the work.\n5. Safety precautions: We will provide protective gear to our workers and ensure that they"
+},
+{
+  "_id": {
+    "$oid": "68ee1c66d9a9bbb506277863"
+  },
+  "title": "test",
+  "description": "buca",
+  "category": "test",
+  "status": "problema risolto",
+  "photoUrl": "test",
+  "solution_description": "Buca is a small bakery located in the heart of the city. It is a popular spot for locals and tourists alike, serving delicious pastries and sandwiches. However, over the last few months, the bakery has been facing a significant challenge. Despite its popularity, the bakery has been struggling to keep up with the demand for its products.\n\nOne reason for this is that the bakery is struggling to attract new customers. In the past, customers would come in and leave without making a purchase. However, in recent months, customers have been leaving empty"
+}]
