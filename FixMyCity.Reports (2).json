@@ -1,0 +1,11 @@
+[{
+  "_id": {
+    "$oid": "685ab29d3f14fdb5fb8f33ba"
+  },
+  "username": "mario_rossi",
+  "email": "mario.rossi@example.com",
+  "role": "citizen",
+  "createdAt": {
+    "$date": "2025-06-24T12:00:00.000Z"
+  }
+}]
