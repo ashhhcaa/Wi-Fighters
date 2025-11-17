@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace FixMyCity 
 {
-    public class Issue 
+    public class Issue  
     {
         [JsonPropertyName("_id")]
         public string Id { get; set; }
