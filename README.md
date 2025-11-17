@@ -1,4 +1,4 @@
-# Wi-Fighters
+# Fix My City
 
 C# project that takes in input a report with problems from the streets and utilizes a locally hosted LLM to solve the problem and give you a solution for it.
 
