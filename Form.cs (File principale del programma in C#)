@@ -24,7 +24,7 @@ namespace FixMyCity
         public Form1()
         {
             InitializeComponent();
-            _httpClient.BaseAddress = new Uri("http://10.10.14.223:8001/");
+            _httpClient.BaseAddress = new Uri("http://ip_della_vm:8001/");
 
             // Initialize and configure the polling timer
             _pollingTimer = new System.Windows.Forms.Timer();
